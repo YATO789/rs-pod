@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{env, fs, path::Path};
 use rand::{distributions::Alphanumeric, Rng};
 use tiny_http::{Server, Response};
 use url::Url;
@@ -24,6 +24,22 @@ struct TokenResponse {
 }
 
 impl SpotifyOAuth {
+    pub fn from_env(scopes: Vec<String>) -> Result<Self, Box<dyn std::error::Error>> {
+
+        dotenv::dotenv().ok();
+        
+        let client_id = env::var("CLIENT_ID")?;
+        let client_secret = env::var("CLIENT_SECRET")?;
+        let redirect_uri = env::var("REDIRECT_URI")?;
+
+        Ok(Self {
+            client_id,
+            client_secret,
+            redirect_uri,
+            scopes,
+        })
+    }
+
     pub fn new(
         client_id: impl Into<String>,
         client_secret: impl Into<String>,
