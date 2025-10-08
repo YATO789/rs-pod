@@ -7,7 +7,7 @@ use url::Url;
 
 const TOKEN_FILE: &str = "spotify_token.json";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,Default)]
 pub struct SpotifyOAuth {
     client_id: String,
     client_secret: String,
@@ -24,13 +24,13 @@ struct TokenResponse {
 }
 
 impl SpotifyOAuth {
-    pub fn from_env(scopes: Vec<String>) -> Result<Self, Box<dyn std::error::Error>> {
-
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         dotenv::dotenv().ok();
         
         let client_id = env::var("CLIENT_ID")?;
         let client_secret = env::var("CLIENT_SECRET")?;
         let redirect_uri = env::var("REDIRECT_URI")?;
+        let scopes = vec!["user-read-playback-state".to_string()];
 
         Ok(Self {
             client_id,
@@ -40,18 +40,10 @@ impl SpotifyOAuth {
         })
     }
 
-    pub fn new(
-        client_id: impl Into<String>,
-        client_secret: impl Into<String>,
-        redirect_uri: impl Into<String>,
-        scopes: Vec<String>,
-    ) -> Self {
-        Self {
-            client_id: client_id.into(),
-            client_secret: client_secret.into(),
-            redirect_uri: redirect_uri.into(),
-            scopes,
-        }
+    pub async fn init() -> Result<String, Box<dyn std::error::Error >> {
+        let oauth = Self::new()?;
+        let token = oauth.get_spotify_access_token().await?;
+        Ok(token)
     }
 
     /// 🎫 Spotifyトークンを取得（リフレッシュ対応）
@@ -179,7 +171,6 @@ impl SpotifyOAuth {
             .await?;
 
         let token_json: TokenResponse = res.json().await?;
-        println!("✅ Access token acquired!");
         Ok(token_json)
     }
 }

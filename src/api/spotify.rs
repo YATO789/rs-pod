@@ -4,6 +4,7 @@ use serde::Deserialize;
 pub struct SpotifyClient {
     client: Client,
     access_token: String,
+    pub spotify_player : SpotifyPlayer,
 }
 
 #[derive(Deserialize, Debug)]
@@ -23,15 +24,30 @@ pub struct Artist {
     pub name: String,
 }
 
-impl SpotifyClient {
-    pub fn new(client: Client, access_token: String) -> Self {
+impl Default for SpotifyPlayer {
+    fn default() -> Self {
         Self {
+            is_playing: false,
+            item: None,
+        }
+    }
+}
+
+impl SpotifyClient {
+    pub fn new(client: Client, access_token: &String) -> Self {
+        Self {
+            spotify_player: SpotifyPlayer::default(),
             client,
-            access_token,
+            access_token: access_token.to_string(),
         }
     }
 
-    pub async fn display_current_playback(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn init(mut self) -> Result<Self, Box<dyn std::error::Error>> {
+        self.spotify_player = self.get_current_playback().await?;
+        Ok(self)
+    }
+
+    pub async fn get_current_playback(&self) -> Result<SpotifyPlayer, Box<dyn std::error::Error>> {
         let res = self.client
             .get("https://api.spotify.com/v1/me/player")
             .bearer_auth(&self.access_token)
@@ -43,19 +59,6 @@ impl SpotifyClient {
         }
 
         let player: SpotifyPlayer = res.json().await?;
-
-        println!("\n=== 🎧 再生情報 ===");
-        if player.is_playing {
-            if let Some(track) = &player.item {
-                let artists: Vec<String> = track.artists.iter().map(|a| a.name.clone()).collect();
-                println!("Now Playing: {} - {}", track.name, artists.join(", "));
-            } else {
-                println!("曲情報を取得できませんでした。");
-            }
-        } else {
-            println!("現在は再生中ではありません。");
-        }
-
-        Ok(())
+        Ok(player)
     }
 }
