@@ -1,6 +1,11 @@
 use reqwest::Client;
 use serde::Deserialize;
 
+pub enum SkipDirection {
+    Next,
+    Previous,
+}
+
 pub struct SpotifyClient {
     client: Client,
     access_token: String,
@@ -60,5 +65,27 @@ impl SpotifyClient {
 
         let player: SpotifyPlayer = res.json().await?;
         Ok(player)
+    }
+
+    pub async fn skip_track(&mut self, direction: SkipDirection) -> Result<(), Box<dyn std::error::Error>> {
+        let endpoint = match direction {
+            SkipDirection::Next => "https://api.spotify.com/v1/me/player/next",
+            SkipDirection::Previous => "https://api.spotify.com/v1/me/player/previous",
+        };
+
+        let res = self.client
+            .post(endpoint)
+            .bearer_auth(&self.access_token)
+            .header("Content-Length", "0")
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(format!("Failed to skip track: {}", res.status()).into());
+        }
+
+        // Update current playback info
+        self.spotify_player = self.get_current_playback().await?;
+        Ok(())
     }
 }

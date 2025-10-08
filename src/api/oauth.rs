@@ -57,7 +57,6 @@ impl SpotifyOAuth {
 
             // refresh_token がある場合は再利用
             if let Some(refresh_token) = &token_data.refresh_token {
-                println!("🔄 Refreshing access token...");
 
                 let client = Client::new();
                 let params = [
@@ -75,8 +74,6 @@ impl SpotifyOAuth {
 
                 if res.status().is_success() {
                     let new_token: TokenResponse = res.json().await?;
-                    println!("✅ Access token refreshed.");
-
                     // refresh_token が返ってこない場合もあるので既存のものを保持
                     let merged_token = TokenResponse {
                         refresh_token: Some(refresh_token.clone()),

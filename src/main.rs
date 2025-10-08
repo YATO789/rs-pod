@@ -10,11 +10,11 @@ use ratatui::{
     widgets::{Block, Paragraph, Widget},
     DefaultTerminal, Frame,
 };
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind}};
 use std::io;
 use reqwest::Client;
 
-use crate::api::spotify::SpotifyClient;
+use crate::api::spotify::{SpotifyClient, SkipDirection};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,10 +27,8 @@ async fn main() -> Result<()> {
 
 
 struct App{
-    access_token : String,
     spotify_client :SpotifyClient,
     exit: bool,
-
 }
 
 impl App{
@@ -45,13 +43,13 @@ impl App{
             .await
             .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
 
-        Ok(Self{access_token,spotify_client,exit : false})
+        Ok(Self{spotify_client,exit : false})
     }
 
     async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()>{
         while !self.exit {
              terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
+            self.handle_events().await?;
         }
         Ok(())
     }
@@ -60,21 +58,25 @@ impl App{
         frame.render_widget(self, frame.area());
     }
 
-        fn handle_events(&mut self) -> io::Result<()> {
+        async fn handle_events(&mut self) -> io::Result<()> {
             match event::read()? {
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key_event)
+                    self.handle_key_event(key_event).await
                 }
                 _ => {}
             };
             Ok(())
         }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) {
+    async fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
-            KeyCode::Left => (),
-            KeyCode::Right => (),
+            KeyCode::Left => {
+                let _ = self.spotify_client.skip_track(SkipDirection::Previous).await;
+            },
+            KeyCode::Right => {
+                let _ = self.spotify_client.skip_track(SkipDirection::Next).await;
+            },
             _ => {}
         }
     }
@@ -87,11 +89,11 @@ impl App{
 // ANCHOR: impl Widget
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" Counter App Tutorial ".bold());
+        let title = Line::from(" Now Playing ".bold());
         let instructions = Line::from(vec![
-            " Decrement ".into(),
+            " Previous Song ".into(),
             "<Left>".blue().bold(),
-            " Increment ".into(),
+            " Next Song ".into(),
             "<Right>".blue().bold(),
             " Quit ".into(),
             "<Q> ".blue().bold(),
@@ -101,15 +103,21 @@ impl Widget for &App {
             .title_bottom(instructions.centered())
             .border_set(border::THICK);
 
-        let track_name = self.spotify_client.spotify_player.item
+        let (track_name, artist_names) = self.spotify_client.spotify_player.item
             .as_ref()
-            .map(|track| track.name.as_str())
-            .unwrap_or("No track playing");
+            .map(|track| {
+                let artists = track.artists.iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (track.name.as_str(), artists)
+            })
+            .unwrap_or(("No track playing", String::new()));
 
-        let counter_text = Text::from(vec![Line::from(vec![
-            "Now Playing: ".into(),
-            track_name.to_string().yellow(),
-        ])]);
+        let counter_text = Text::from(vec![
+            Line::from(vec![track_name.to_string().green()]),
+            Line::from(vec![artist_names.to_string().green()]),
+        ]);
 
         Paragraph::new(counter_text)
             .centered()
