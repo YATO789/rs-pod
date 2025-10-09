@@ -13,8 +13,9 @@ use ratatui::{
 use crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind}};
 use std::io;
 use reqwest::Client;
-
 use crate::api::spotify::{SpotifyClient, SkipDirection};
+use crossterm::{execute, terminal::Clear, terminal::ClearType};
+use std::io::{Write};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -55,6 +56,10 @@ impl App{
     }
 
     fn draw(&self, frame: &mut Frame) {
+            // ★ ターミナルを毎回クリア（物理コンソール対策）
+        let _ = execute!(io::stdout(), Clear(ClearType::All));
+        io::stdout().flush().unwrap();
+
         frame.render_widget(self, frame.area());
     }
 
@@ -90,17 +95,17 @@ impl App{
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from(" Now Playing ".bold());
-        let instructions = Line::from(vec![
-            " Previous Song ".into(),
-            "<Left>".blue().bold(),
-            " Next Song ".into(),
-            "<Right>".blue().bold(),
-            " Quit ".into(),
-            "<Q> ".blue().bold(),
-        ]);
+        // let instructions = Line::from(vec![
+        //     " Previous Song ".into(),
+        //     "<Left>".blue().bold(),
+        //     " Next Song ".into(),
+        //     "<Right>".blue().bold(),
+        //     " Quit ".into(),
+        //     "<Q> ".blue().bold(),
+        // ]);
         let block = Block::bordered()
             .title(title.centered())
-            .title_bottom(instructions.centered())
+           // .title_bottom(instructions.centered())
             .border_set(border::THICK);
 
         let (track_name, artist_names) = self.spotify_client.spotify_player.item
@@ -115,7 +120,7 @@ impl Widget for &App {
             .unwrap_or(("No track playing", String::new()));
 
         let counter_text = Text::from(vec![
-            Line::from(vec![track_name.to_string().green()]),
+            Line::from(vec![track_name.to_string().green().bold()]),
             Line::from(vec![artist_names.to_string().green()]),
         ]);
 
