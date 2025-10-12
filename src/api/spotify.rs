@@ -16,12 +16,14 @@ pub struct SpotifyClient {
 pub struct SpotifyPlayer {
     pub is_playing: bool,
     pub item: Option<Track>,
+    pub progress_ms: Option<i64>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Track {
     pub name: String,
     pub artists: Vec<Artist>,
+    pub duration_ms: i64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -34,6 +36,7 @@ impl Default for SpotifyPlayer {
         Self {
             is_playing: false,
             item: None,
+            progress_ms: None,
         }
     }
 }
