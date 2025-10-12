@@ -1,5 +1,7 @@
 use reqwest::Client;
 use serde::Deserialize;
+use image::{DynamicImage, ImageReader};
+use std::io::Cursor;
 
 pub enum SkipDirection {
     Next,
@@ -24,6 +26,19 @@ pub struct Track {
     pub name: String,
     pub artists: Vec<Artist>,
     pub duration_ms: i64,
+    pub album: Album,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Album {
+    pub images: Vec<Image>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Image {
+    pub url: String,
+    pub height: Option<i32>,
+    pub width: Option<i32>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -62,6 +77,11 @@ impl SpotifyClient {
             .send()
             .await?;
 
+        // 204 No Content: 何も再生していない場合
+        if res.status().as_u16() == 204 {
+            return Ok(SpotifyPlayer::default());
+        }
+
         if !res.status().is_success() {
             return Err(format!("Failed to fetch player info: {}", res.status()).into());
         }
@@ -90,5 +110,17 @@ impl SpotifyClient {
         // Update current playback info
         self.spotify_player = self.get_current_playback().await?;
         Ok(())
+    }
+
+    pub async fn download_image(&self, url: &str) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        // URLから画像を取得
+        let bytes = self.client.get(url).send().await?.bytes().await?;
+
+        // image crate でデコード
+        let dyn_img = ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()?
+            .decode()?;
+
+        Ok(dyn_img)
     }
 }

@@ -5,14 +5,17 @@ use ratatui::{
     buffer::Buffer,
     layout::{Rect, Layout, Constraint, Direction},
     style::{Stylize, Style, Color},
+    symbols::border,
     text::Line,
-    widgets::{Paragraph, Widget, Gauge},
+    widgets::{Block, Paragraph, Widget, Gauge},
     DefaultTerminal, Frame,
 };
 use crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind}};
 use std::{io, time::Duration};
 use reqwest::Client;
 use crate::api::spotify::{SpotifyClient, SkipDirection};
+use ratatui_image::{picker::Picker, picker::ProtocolType, Image as RatatuiImage, Resize};
+use image::DynamicImage;
 
 // ミリ秒をmm:ss形式にフォーマット
 fn format_time(ms: i64) -> String {
@@ -37,6 +40,9 @@ async fn main() -> Result<()> {
 struct App{
     spotify_client :SpotifyClient,
     exit: bool,
+    picker: Picker,
+    album_art_image: Option<DynamicImage>,
+    current_track_name: Option<String>,
 }
 
 impl App{
@@ -51,7 +57,30 @@ impl App{
             .await
             .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
 
-        Ok(Self{spotify_client,exit : false})
+        // Initialize picker with Halfblocks protocol
+        let mut picker = Picker::new((8, 16));
+        picker.protocol_type = ProtocolType::Halfblocks;
+
+        // Download album art if available
+        let mut album_art_image = None;
+        let mut current_track_name = None;
+
+        if let Some(track) = &spotify_client.spotify_player.item {
+            current_track_name = Some(track.name.clone());
+            if let Some(image) = track.album.images.first() {
+                if let Ok(dyn_img) = spotify_client.download_image(&image.url).await {
+                    album_art_image = Some(dyn_img);
+                }
+            }
+        }
+
+        Ok(Self{
+            spotify_client,
+            exit: false,
+            picker,
+            album_art_image,
+            current_track_name,
+        })
     }
 
     async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()>{
@@ -67,6 +96,21 @@ impl App{
             // 1秒ごとに更新
             if last_update.elapsed() >= update_interval {
                 if let Ok(player) = self.spotify_client.get_current_playback().await {
+                    // Check if track changed
+                    let new_track_name = player.item.as_ref().map(|t| t.name.clone());
+                    if new_track_name != self.current_track_name {
+                        self.current_track_name = new_track_name;
+                        // Download new album art
+                        if let Some(track) = &player.item {
+                            if let Some(image) = track.album.images.first() {
+                                if let Ok(dyn_img) = self.spotify_client.download_image(&image.url).await {
+                                    self.album_art_image = Some(dyn_img);
+                                }
+                            }
+                        } else {
+                            self.album_art_image = None;
+                        }
+                    }
                     self.spotify_client.spotify_player = player;
                 }
                 last_update = tokio::time::Instant::now();
@@ -75,7 +119,7 @@ impl App{
         Ok(())
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
     }
 
@@ -111,7 +155,7 @@ impl App{
 }
 
 // ANCHOR: impl Widget
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // 曲情報を取得
         let (track_name, artist_names, duration_ms) = self.spotify_client.spotify_player.item
@@ -135,7 +179,8 @@ impl Widget for &App {
         };
 
         // 時間表示の作成
-        let time_display = format!("{} / {}", format_time(progress_ms), format_time(duration_ms));
+        let current_time = format_time(progress_ms);
+        let remaining_time = format!("-{}", format_time(duration_ms - progress_ms));
 
         // レイアウトを作成
         let chunks = Layout::default()
@@ -144,11 +189,13 @@ impl Widget for &App {
                 Constraint::Length(1), // タイトル
                 Constraint::Length(1), // 区切り線
                 Constraint::Length(1), // 空行
+                Constraint::Length(20), // アルバムアート
+                Constraint::Length(1), // 空行
                 Constraint::Length(1), // 曲名
                 Constraint::Length(1), // アーティスト名
                 Constraint::Length(1), // 空行
+                Constraint::Length(3), // プログレスバー（枠込み）
                 Constraint::Length(1), // 時間表示
-                Constraint::Length(1), // プログレスバー
                 Constraint::Min(0),    // 余白
             ])
             .split(area);
@@ -165,39 +212,92 @@ impl Widget for &App {
         Paragraph::new(separator_line)
             .render(chunks[1], buf);
 
+        // アルバムアートを表示
+        if let Some(ref image) = self.album_art_image {
+            let image_area = chunks[3];
+
+            // 画像を中央に配置するためのレイアウト
+            let horizontal_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Min(0),     // 左の余白
+                    Constraint::Length(40), // 画像の幅
+                    Constraint::Min(0),     // 右の余白
+                ])
+                .split(image_area);
+
+            // Halfblocksプロトコルを使用して画像を描画
+            if let Ok(protocol) = self.picker.new_protocol(image.clone(), horizontal_chunks[1], Resize::Fit(None)) {
+                RatatuiImage::new(protocol.as_ref()).render(horizontal_chunks[1], buf);
+            }
+        }
+
         // 曲名を表示
         let track_line = Line::from(track_name.to_string().green().bold());
         Paragraph::new(track_line)
             .centered()
-            .render(chunks[3], buf);
+            .render(chunks[5], buf);
 
         // アーティスト名を表示
         let artist_line = Line::from(artist_names.to_string().green());
         Paragraph::new(artist_line)
             .centered()
-            .render(chunks[4], buf);
-
-        // 時間表示
-        let time_line = Line::from(time_display.clone().cyan());
-        Paragraph::new(time_line)
-            .centered()
             .render(chunks[6], buf);
 
-        // プログレスバーを表示（左右に余白を追加）
+        // プログレスバーのレイアウト
         let progress_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(2), // 左の余白
-                Constraint::Min(0),    // プログレスバー
-                Constraint::Length(2), // 右の余白
+                Constraint::Length(2),  // 左の余白
+                Constraint::Min(0),     // プログレスバー
+                Constraint::Length(2),  // 右の余白
             ])
-            .split(chunks[7]);
+            .split(chunks[8]);
+
+        // プログレスバーに枠を追加
+        let progress_block = Block::bordered()
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Green));
+
+        let progress_inner = progress_block.inner(progress_chunks[1]);
+        progress_block.render(progress_chunks[1], buf);
 
         let gauge = Gauge::default()
             .gauge_style(Style::default().fg(Color::Green))
             .percent(progress_ratio)
             .label("");
-        gauge.render(progress_chunks[1], buf);
+        gauge.render(progress_inner, buf);
+
+        // 時間表示のレイアウト
+        let time_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(2),  // 左の余白
+                Constraint::Min(0),     // 中央エリア
+                Constraint::Length(2),  // 右の余白
+            ])
+            .split(chunks[9]);
+
+        // 中央エリアをさらに分割（再生時間とプログレスバーと残り時間の幅を揃える）
+        let time_inner_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(8),  // 再生時間
+                Constraint::Min(0),     // 中央の余白
+                Constraint::Length(8),  // 残り時間
+            ])
+            .split(time_chunks[1]);
+
+        // 再生時間を表示
+        let current_time_line = Line::from(current_time.cyan());
+        Paragraph::new(current_time_line)
+            .render(time_inner_chunks[0], buf);
+
+        // 残り時間を表示
+        let remaining_time_line = Line::from(remaining_time.cyan());
+        Paragraph::new(remaining_time_line)
+            .alignment(ratatui::layout::Alignment::Right)
+            .render(time_inner_chunks[2], buf);
     }
 }
 
