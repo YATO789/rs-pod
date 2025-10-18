@@ -57,9 +57,9 @@ impl App{
             .await
             .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
 
-        // Initialize picker with Halfblocks protocol
+        // Initialize picker with Sixel protocol
         let mut picker = Picker::new((8, 16));
-        picker.protocol_type = ProtocolType::Halfblocks;
+        picker.protocol_type = ProtocolType::Sixel;
 
         // Download album art if available
         let mut album_art_image = None;
