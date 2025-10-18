@@ -57,9 +57,10 @@ impl App{
             .await
             .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
 
-        // Initialize picker with Sixel protocol
-        let mut picker = Picker::new((8, 16));
-        picker.protocol_type = ProtocolType::Sixel;
+        // Initialize picker with Halfblocks protocol
+        // フォントサイズ: (幅, 高さ) 正方形表示のため 1:1 の比率
+        let mut picker = Picker::new((10, 25));
+        picker.protocol_type = ProtocolType::Halfblocks;
 
         // Download album art if available
         let mut album_art_image = None;
@@ -216,19 +217,32 @@ impl Widget for &mut App {
         if let Some(ref image) = self.album_art_image {
             let image_area = chunks[3];
 
-            // 画像を中央に配置するためのレイアウト
+            // 画像を中央に配置するために水平レイアウトを作成
             let horizontal_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Min(0),     // 左の余白
-                    Constraint::Length(40), // 画像の幅
-                    Constraint::Min(0),     // 右の余白
+                    Constraint::Percentage(35), // 左の余白
+                    Constraint::Percentage(30), // 画像エリア
+                    Constraint::Percentage(35), // 右の余白
                 ])
                 .split(image_area);
 
+            // 正方形のエリアを作成（ターミナルフォントのアスペクト比を考慮）
+            let img_width = horizontal_chunks[1].width;
+            let square_height = img_width; // halfblocksは1セルに2ピクセル分の高さを格納するため
+
+            let vertical_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(square_height.min(horizontal_chunks[1].height)),
+                    Constraint::Min(0),
+                ])
+                .split(horizontal_chunks[1]);
+
             // Halfblocksプロトコルを使用して画像を描画
-            if let Ok(protocol) = self.picker.new_protocol(image.clone(), horizontal_chunks[1], Resize::Fit(None)) {
-                RatatuiImage::new(protocol.as_ref()).render(horizontal_chunks[1], buf);
+            if let Ok(protocol) = self.picker.new_protocol(image.clone(), vertical_chunks[0], Resize::Fit(Some(ratatui_image::FilterType::Lanczos3))) {
+                let image_widget = RatatuiImage::new(protocol.as_ref());
+                image_widget.render(vertical_chunks[0], buf);
             }
         }
 
