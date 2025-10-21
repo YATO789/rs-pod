@@ -1,1 +1,1 @@
-![G3DlPLVaYAAFoNs](https://github.com/user-attachments/assets/860f185a-17dc-4676-893f-ae97cd84adbd)
+<img width="603" height="351" alt="image" src="https://github.com/user-attachments/assets/602c6853-d123-426c-8b89-7b25843cad0c" />
