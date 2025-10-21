@@ -57,10 +57,10 @@ impl App{
             .await
             .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
 
-        // Initialize picker with Halfblocks protocol
-        // フォントサイズ: (幅, 高さ) 正方形表示のため 1:1 の比率
-        let mut picker = Picker::new((10, 25));
-        picker.protocol_type = ProtocolType::Halfblocks;
+        // Initialize picker with Sixel protocol
+
+        let mut picker = Picker::new((10, 20));
+        picker.protocol_type = ProtocolType::Sixel;
 
         // Download album art if available
         let mut album_art_image = None;
@@ -239,7 +239,7 @@ impl Widget for &mut App {
                 ])
                 .split(horizontal_chunks[1]);
 
-            // Halfblocksプロトコルを使用して画像を描画
+            // Sixelプロトコルを使用して画像を描画
             if let Ok(protocol) = self.picker.new_protocol(image.clone(), vertical_chunks[0], Resize::Fit(Some(ratatui_image::FilterType::Lanczos3))) {
                 let image_widget = RatatuiImage::new(protocol.as_ref());
                 image_widget.render(vertical_chunks[0], buf);
