@@ -152,59 +152,60 @@ impl Widget for &mut App {
         let remaining_time = format!("-{}", format_time(duration_ms - progress_ms));
 
         // レイアウトを作成
-        let chunks = Layout::default()
+        let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // タイトル
-                Constraint::Length(1), // 区切り線
-                Constraint::Length(1), // 空行
-                Constraint::Length(1), // 曲名
-                Constraint::Length(1), // アーティスト名
-                Constraint::Length(1), // 空行
-                Constraint::Length(3), // プログレスバー（枠込み）
-                Constraint::Length(1), // 時間表示
-                Constraint::Min(0),    // 余白
+                Constraint::Percentage(5),  //余白
+                Constraint::Percentage(5),  // タイトル
+                Constraint::Percentage(5),  // 区切り線
+                Constraint::Percentage(20), // 空行
+                Constraint::Percentage(5),  // 曲名
+                Constraint::Percentage(5),  // アーティスト名
+                Constraint::Percentage(25), // 空行
+                Constraint::Percentage(15), // プログレスバー（枠込み）
+                Constraint::Percentage(5),  // 時間表示
+                Constraint::Percentage(5), // 余白
             ])
             .split(area);
 
         // タイトルを表示
         let title = Line::from(" Now Playing ".bold().fg(custom_green));
-        Paragraph::new(title).centered().render(chunks[0], buf);
+        Paragraph::new(title).centered().render(layout[1], buf);
 
         // 区切り線を表示
         let separator = "─".repeat(area.width as usize);
         let separator_line = Line::from(separator.fg(custom_green));
-        Paragraph::new(separator_line).render(chunks[1], buf);
+        Paragraph::new(separator_line).render(layout[2], buf);
 
         // 曲名を表示
         let track_line = Line::from(track_name.to_string().fg(custom_green).bold());
         Paragraph::new(track_line)
             .centered()
-            .render(chunks[3], buf);
+            .render(layout[4], buf);
 
         // アーティスト名を表示
         let artist_line = Line::from(artist_names.to_string().fg(custom_green));
         Paragraph::new(artist_line)
             .centered()
-            .render(chunks[4], buf);
+            .render(layout[5], buf);
 
         // プログレスバーのレイアウト
-        let progress_chunks = Layout::default()
+        let progress_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Length(2), // 左の余白
                 Constraint::Min(0),    // プログレスバー
                 Constraint::Length(2), // 右の余白
             ])
-            .split(chunks[6]);
+            .split(layout[7]);
 
         // プログレスバーに枠を追加
         let progress_block = Block::bordered()
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(custom_green));
 
-        let progress_inner = progress_block.inner(progress_chunks[1]);
-        progress_block.render(progress_chunks[1], buf);
+        let progress_inner = progress_block.inner(progress_layout[1]);
+        progress_block.render(progress_layout[1], buf);
 
         let gauge = Gauge::default()
             .gauge_style(Style::default().fg(custom_green))
@@ -213,33 +214,33 @@ impl Widget for &mut App {
         gauge.render(progress_inner, buf);
 
         // 時間表示のレイアウト
-        let time_chunks = Layout::default()
+        let time_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Length(2), // 左の余白
                 Constraint::Min(0),    // 中央エリア
                 Constraint::Length(2), // 右の余白
             ])
-            .split(chunks[7]);
+            .split(layout[8]);
 
         // 中央エリアをさらに分割（再生時間とプログレスバーと残り時間の幅を揃える）
-        let time_inner_chunks = Layout::default()
+        let time_inner_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Length(8), // 再生時間
                 Constraint::Min(0),    // 中央の余白
                 Constraint::Length(8), // 残り時間
             ])
-            .split(time_chunks[1]);
+            .split(time_layout[1]);
 
         // 再生時間を表示
         let current_time_line = Line::from(current_time.fg(custom_green));
-        Paragraph::new(current_time_line).render(time_inner_chunks[0], buf);
+        Paragraph::new(current_time_line).render(time_inner_layout[0], buf);
 
         // 残り時間を表示
         let remaining_time_line = Line::from(remaining_time.fg(custom_green));
         Paragraph::new(remaining_time_line)
             .alignment(Alignment::Right)
-            .render(time_inner_chunks[2], buf);
+            .render(time_inner_layout[2], buf);
     }
 }
