@@ -34,7 +34,7 @@ pub struct Album {
     pub images: Vec<Image>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Image {
     pub url: String,
     pub height: Option<i32>,
@@ -44,6 +44,24 @@ pub struct Image {
 #[derive(Deserialize, Debug)]
 pub struct Artist {
     pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct PlaylistsResponse {
+    pub items: Vec<Playlist>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Playlist {
+    pub id: String,
+    pub name: String,
+    pub tracks: PlaylistTracks,
+    pub images: Vec<Image>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PlaylistTracks {
+    pub total: i32,
 }
 
 impl Default for SpotifyPlayer {
@@ -122,5 +140,44 @@ impl SpotifyClient {
             .decode()?;
 
         Ok(dyn_img)
+    }
+
+    pub async fn get_user_playlists(&self) -> Result<Vec<Playlist>, Box<dyn std::error::Error>> {
+        let res = self.client
+            .get("https://api.spotify.com/v1/me/playlists")
+            .bearer_auth(&self.access_token)
+            .query(&[("limit", "50")])
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(format!("Failed to fetch playlists: {}", res.status()).into());
+        }
+
+        let playlists: PlaylistsResponse = res.json().await?;
+        Ok(playlists.items)
+    }
+
+    pub async fn play_playlist(&self, playlist_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let body = serde_json::json!({
+            "context_uri": format!("spotify:playlist:{}", playlist_id),
+            "offset": {
+                "position": 0
+            },
+            "position_ms": 0
+        });
+
+        let res = self.client
+            .put("https://api.spotify.com/v1/me/player/play")
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(format!("Failed to play playlist: {}", res.status()).into());
+        }
+
+        Ok(())
     }
 }

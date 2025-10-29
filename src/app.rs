@@ -1,5 +1,5 @@
 use crate::api::oauth::SpotifyOAuth;
-use crate::api::spotify::{SpotifyClient, SkipDirection};
+use crate::api::spotify::{SpotifyClient, SkipDirection, Playlist};
 use crate::utils::format_time;
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -9,16 +9,25 @@ use ratatui::{
     style::{Color, Style, Stylize},
     symbols::border,
     text::Line,
-    widgets::{Block, Gauge, Paragraph, Widget},
+    widgets::{Block, Gauge, Paragraph, Widget, List, ListItem, ListState},
     DefaultTerminal, Frame,
 };
 use reqwest::Client;
 use std::{io, time::Duration};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Page {
+    PlaylistList,
+    NowPlaying,
+}
+
 pub struct App {
     spotify_client: SpotifyClient,
     exit: bool,
     current_track_name: Option<String>,
+    current_page: Page,
+    playlists: Vec<Playlist>,
+    playlist_state: ListState,
 }
 
 impl App {
@@ -40,10 +49,24 @@ impl App {
             .as_ref()
             .map(|track| track.name.clone());
 
+        // プレイリストを取得
+        let playlists = spotify_client
+            .get_user_playlists()
+            .await
+            .unwrap_or_default();
+
+        let mut playlist_state = ListState::default();
+        if !playlists.is_empty() {
+            playlist_state.select(Some(0));
+        }
+
         Ok(Self {
             spotify_client,
             exit: false,
             current_track_name,
+            current_page: Page::PlaylistList,
+            playlists,
+            playlist_state,
         })
     }
 
@@ -91,8 +114,50 @@ impl App {
     }
 
     async fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match self.current_page {
+            Page::PlaylistList => self.handle_playlist_list_key(key_event).await,
+            Page::NowPlaying => self.handle_now_playing_key(key_event).await,
+        }
+    }
+
+    async fn handle_playlist_list_key(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(selected) = self.playlist_state.selected() {
+                    if selected > 0 {
+                        self.playlist_state.select(Some(selected - 1));
+                    }
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(selected) = self.playlist_state.selected() {
+                    if selected < self.playlists.len() - 1 {
+                        self.playlist_state.select(Some(selected + 1));
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(selected) = self.playlist_state.selected() {
+                    if let Some(playlist) = self.playlists.get(selected) {
+                        // プレイリストを再生
+                        let _ = self.spotify_client.play_playlist(&playlist.id).await;
+                        // 再生画面に遷移
+                        self.current_page = Page::NowPlaying;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_now_playing_key(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit(),
+            KeyCode::Esc | KeyCode::Char('p') => {
+                // プレイリスト一覧に戻る
+                self.current_page = Page::PlaylistList;
+            }
             KeyCode::Left => {
                 let _ = self
                     .spotify_client
@@ -118,6 +183,75 @@ impl Widget for &mut App {
         let background = Block::default().style(Style::default().bg(Color::Black));
         background.render(area, buf);
 
+        match self.current_page {
+            Page::PlaylistList => self.render_playlist_list(area, buf),
+            Page::NowPlaying => self.render_now_playing(area, buf),
+        }
+    }
+}
+
+impl App {
+    fn render_playlist_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let custom_green = Color::Rgb(0x0A, 0xE1, 0x64);
+
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // ヘッダー
+                Constraint::Min(0),    // プレイリストリスト
+                Constraint::Length(2), // フッター
+            ])
+            .split(area);
+
+        // ヘッダー
+        let title = Line::from(" Your Playlists ".bold().fg(custom_green));
+        let header_block = Block::bordered()
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(custom_green));
+        let header = Paragraph::new(title)
+            .centered()
+            .block(header_block);
+        header.render(layout[0], buf);
+
+        // プレイリストリスト
+        let items: Vec<ListItem> = self
+            .playlists
+            .iter()
+            .map(|playlist| {
+                let track_count = format!(" ({} tracks)", playlist.tracks.total);
+                ListItem::new(format!("{}{}", playlist.name, track_count))
+                    .style(Style::default().fg(Color::White))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::bordered()
+                    .border_set(border::ROUNDED)
+                    .border_style(Style::default().fg(custom_green))
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(custom_green)
+                    .fg(Color::Black)
+                    .bold()
+            )
+            .highlight_symbol("> ");
+
+        ratatui::widgets::StatefulWidget::render(list, layout[1], buf, &mut self.playlist_state);
+
+        // フッター（操作ガイド）
+        let help = Line::from(vec![
+            "↑/k:Up ".fg(custom_green),
+            "↓/j:Down ".fg(custom_green),
+            "Enter:Play ".fg(custom_green),
+            "q:Quit".fg(custom_green),
+        ]);
+        let footer = Paragraph::new(help).centered();
+        footer.render(layout[2], buf);
+    }
+
+    fn render_now_playing(&self, area: Rect, buf: &mut Buffer) {
         // カスタムカラーを定義
         let custom_green = Color::Rgb(0x0A, 0xE1, 0x64);
 
@@ -155,16 +289,17 @@ impl Widget for &mut App {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(5),  //余白
-                Constraint::Percentage(5),  // タイトル
-                Constraint::Percentage(5),  // 区切り線
-                Constraint::Percentage(20), // 空行
-                Constraint::Percentage(5),  // 曲名
-                Constraint::Percentage(5),  // アーティスト名
-                Constraint::Percentage(25), // 空行
-                Constraint::Percentage(15), // プログレスバー（枠込み）
-                Constraint::Percentage(5),  // 時間表示
-                Constraint::Percentage(5), // 余白
+                Constraint::Length(1), // 上部の余白
+                Constraint::Length(1), // タイトル 1
+                Constraint::Length(1), // 区切り線 2
+                Constraint::Length(3), // 空行 3
+                Constraint::Length(1), // 曲名 4
+                Constraint::Length(1), // アーティスト名
+                Constraint::Length(2), // 空行
+                Constraint::Length(3), // プログレスバー（枠込み）
+                Constraint::Length(1), // 時間表示
+                Constraint::Min(0),    // 余白
+                Constraint::Length(2), // フッター
             ])
             .split(area);
 
@@ -242,5 +377,15 @@ impl Widget for &mut App {
         Paragraph::new(remaining_time_line)
             .alignment(Alignment::Right)
             .render(time_inner_layout[2], buf);
+
+        // フッター（操作ガイド）
+        let help = Line::from(vec![
+            "←:Prev ".fg(custom_green),
+            "→:Next ".fg(custom_green),
+            "p/Esc:Playlists ".fg(custom_green),
+            "q:Quit".fg(custom_green),
+        ]);
+        let footer = Paragraph::new(help).centered();
+        footer.render(layout[10], buf);
     }
 }
