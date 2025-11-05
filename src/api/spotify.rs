@@ -92,6 +92,7 @@ impl SpotifyClient {
         let res = self.client
             .get("https://api.spotify.com/v1/me/player")
             .bearer_auth(&self.access_token)
+            .query(&[("market", "US")])
             .send()
             .await?;
 
@@ -146,7 +147,7 @@ impl SpotifyClient {
         let res = self.client
             .get("https://api.spotify.com/v1/me/playlists")
             .bearer_auth(&self.access_token)
-            .query(&[("limit", "50")])
+            .query(&[("limit", "50"), ("market", "US")])
             .send()
             .await?;
 
